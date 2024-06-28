@@ -26,12 +26,14 @@ impl MasterBundle {
         let mut masterbundle_location = PathBuf::from(&path);
         masterbundle_location.push("MasterBundle.dat");
 
-        let masterbundle_data = Self::parse_masterbundle_data(&masterbundle_location)?;
+        let masterbundle_data = Self::parse_masterbundle_data(&masterbundle_location)
+            .context("Failed to parse MasterBundle data")?;
         let assets = Self::parse(
-            masterbundle_location,
+            path,
             &masterbundle_data.name,
             &masterbundle_data.asset_prefix,
-        )?;
+        )
+        .context("Failed to parse MasterBundle assets")?;
 
         Ok(Self {
             name: masterbundle_data.name,
