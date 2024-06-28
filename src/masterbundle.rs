@@ -1,84 +1,92 @@
-use std::{
-    ffi::OsStr,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
 use crate::manifest::Manifest;
 
+#[derive(Debug)]
 pub struct MasterBundle {
+    /// The name of the [`MasterBundle`], gotten from `MasterBundle.dat`.
     pub name: String,
-    pub path: PathBuf,
+    // All of the assets inside the [`MasterBundle`] manifest.
+    pub assets: Vec<PathBuf>,
+}
+
+#[derive(Debug, Default)]
+pub struct MasterBundleData {
+    pub name: String,
     pub asset_prefix: String,
 }
 
 impl MasterBundle {
-    pub fn new(path: PathBuf) -> anyhow::Result<Self> {
-        let file = std::fs::read_to_string(&path)?;
+    /// Creates a new [`MasterBundle`].
+    pub fn new<P: Into<PathBuf>>(path: P) -> anyhow::Result<Self> {
+        let path: PathBuf = path.into();
 
-        let lines = file.lines();
-        let mut asset_prefix = String::new();
-        let mut name = String::new();
+        let mut masterbundle_location = PathBuf::from(&path);
+        masterbundle_location.push("MasterBundle.dat");
 
-        for line in lines {
-            let mut values = line.split_whitespace();
-
-            let field = values.next().unwrap_or("");
-            let value = values.next().unwrap_or("");
-
-            match field {
-                "Asset_Bundle_Name" => name = value.into(),
-                "Asset_Prefix" => asset_prefix = value.into(),
-                _ => {} // Do nothing, we dont care.
-            }
-        }
+        let masterbundle_data = Self::parse_masterbundle_data(&masterbundle_location)?;
+        let assets = Self::parse(
+            masterbundle_location,
+            &masterbundle_data.name,
+            &masterbundle_data.asset_prefix,
+        )?;
 
         Ok(Self {
-            name,
-            path,
-            asset_prefix,
+            name: masterbundle_data.name,
+            assets,
         })
     }
 
-    pub fn parse(&self) -> anyhow::Result<Vec<PathBuf>> {
-        let mut path = PathBuf::from(&self.path);
-        path.pop(); // remove `MasterBundle.dat`
-        path.push(format!("{}.manifest", &self.name)); // cursed, lol
+    /// Gathers the [`MasterBundle`] assets.
+    pub fn parse<P: Into<PathBuf>>(
+        path: P,
+        name: &str,
+        asset_prefix: &str,
+    ) -> anyhow::Result<Vec<PathBuf>> {
+        let mut manifest_location = path.into();
+        manifest_location.push(format!("{}.manifest", name));
 
-        let manifest =
-            std::fs::read_to_string(path).context("failed to read manifest to string")?;
-        let manifest: Manifest = serde_yaml::from_str(&manifest).context("what the sigma")?;
+        let manifest_file = std::fs::File::open(&manifest_location)
+            .with_context(|| format!("Failed to open file: {}", manifest_location.display()))?;
+        let manifest: Manifest =
+            serde_yaml::from_reader(manifest_file).context("Failed to parse manifest file")?;
 
         let assets: Vec<PathBuf> = manifest.assets.into_iter().map(PathBuf::from).collect();
-
         let assets: Vec<&Path> = assets
             .iter()
-            .filter_map(|x| match x.strip_prefix(&self.asset_prefix) {
+            .filter_map(|asset| match asset.strip_prefix(asset_prefix) {
                 Ok(path) => Some(path),
                 Err(_) => None,
             })
             .collect();
+        let assets: Vec<PathBuf> = assets.into_iter().map(PathBuf::from).collect();
 
-        let directories = assets
-            .into_iter()
-            .filter(|x| match x.extension() {
-                Some(ext) => ext == OsStr::new("prefab"),
-                None => false,
-            })
-            .map(|x| x.parent().unwrap()) // probably not safe, fuck it we ball.
-            .collect::<Vec<_>>();
+        Ok(assets)
+    }
 
-        let dat_paths: Vec<PathBuf> = directories
-            .iter()
-            .map(|original_prefab| {
-                let stem = original_prefab.file_stem().unwrap().to_str().unwrap(); // ohh boy
-                let mut newy = PathBuf::from(original_prefab);
-                newy.push(format!("{stem}.dat"));
-                newy
-            })
-            .collect();
+    /// Reads a `MasterBundle.dat` file and returns its name and asset prefix
+    pub fn parse_masterbundle_data(path: &Path) -> anyhow::Result<MasterBundleData> {
+        let path: PathBuf = path.into();
+        let contents = std::fs::read_to_string(&path)
+            .with_context(|| format!("Failed to read {}", path.display()))?;
 
-        Ok(dat_paths)
+        let mut data = MasterBundleData::default();
+
+        for line in contents.lines() {
+            let mut split = line.split_whitespace();
+
+            let field = split.next().unwrap_or("");
+            let value = split.next().unwrap_or("");
+
+            match field {
+                "Asset_Bundle_Name" => data.name = value.into(),
+                "Asset_Prefix" => data.asset_prefix = value.into(),
+                _ => {}
+            }
+        }
+
+        Ok(data)
     }
 }
