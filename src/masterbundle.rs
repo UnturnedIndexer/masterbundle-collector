@@ -1,8 +1,16 @@
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use anyhow::Context;
 
-use crate::manifest::Manifest;
+/// A MasterBundle manifest file containing metadata for a [`MasterBundle`].
+/// 
+/// This manifest file contains important fields such as `Assets`.
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Manifest {
+    #[serde(rename = "Assets")]
+    pub assets: Vec<String>,
+}
 
 #[derive(Debug)]
 pub struct MasterBundle {

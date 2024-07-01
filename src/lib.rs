@@ -1,2 +1,3 @@
-pub mod manifest;
-pub mod masterbundle;
+mod masterbundle;
+
+pub use masterbundle::{MasterBundle, Manifest};
